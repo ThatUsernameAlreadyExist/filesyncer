@@ -79,7 +79,7 @@ class WebDavFS:
     #Return file content.
     def download(self, path):
         fileContent = ''
-        encodedPath = self._encodePath(path)
+        encodedPath = self._encodePath(path, False)
         lock = self._safeLock(encodedPath)
         if lock != None:
             with lock:
@@ -95,7 +95,7 @@ class WebDavFS:
             else:
                 fileContent = response.content
         else:
-            raise Exception("Lock fail")
+            raise Exception("Lock fail on download")
         return fileContent
 
 
@@ -103,7 +103,7 @@ class WebDavFS:
     def upload(self, path, content):
         if content == "":
             content = " " #on some servers we can't create empty files
-        encodedPath = self._encodePath(path)
+        encodedPath = self._encodePath(path, False)
         lock = self._safeLock(encodedPath)
         if lock != None:
             with lock:
@@ -115,12 +115,12 @@ class WebDavFS:
 
             self._safeUnlock(encodedPath)
         else:
-            raise Exception("Lock fail")
+            raise Exception("Lock fail on upload")
 
 
     def delete(self, path):
         try:
-            self.davClient.delete(self._encodePath(path))
+            self.davClient.delete(self._encodePath(path, False))
         except HTTPUserError, error:
             if (error.response != NOT_FOUND):
                 raise error
@@ -145,13 +145,13 @@ class WebDavFS:
 
             self._safeUnlock(encodedParentDirPath)
         else:
-            raise Exception("Lock fail")
+            raise Exception("Lock fail on mkdir")
 
 
     # Return WebDavLockResponse object. Can be used with other requests.
     def _safeLock(self, path):
         try:
-            lock = self.davClient.lock(path)
+            lock = self.davClient.lock(path, timeout=3600)
             if lock == OK or lock == CREATED:
                 return lock
         except Exception, err:
@@ -180,5 +180,9 @@ class WebDavFS:
         return elements
 
 
-    def _encodePath(self, path):
-        return path.encode('utf8')
+    def _encodePath(self, path, addEndSlash=True):
+        if not addEndSlash or path.endswith('/'):
+            return path.encode('utf8');
+        else:
+            return (path+'/').encode('utf8')
+

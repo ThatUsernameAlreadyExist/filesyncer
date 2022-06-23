@@ -1322,14 +1322,15 @@ class CoreWebDAVClient(HTTPClient):
             (_, headers) = self._prepare("", headers)
         else:
             tag = util.make_absolute(self, uri_or_lock)
+            (uri, headers) = self._prepare(uri_or_lock, headers)
             if locktoken is None:
+                tag = util.make_absolute(self, uri)
                 try:
                     lock = self.locks[tag]
                 except KeyError:
                     raise ValueError("no lock token")
                 tag = lock._tag
                 locktoken = lock.locktokens[0]
-            (uri, headers) = self._prepare(uri_or_lock, headers)
         # RFC 2518, 9.5 Lock-Token Header
         # Lock-Token = "Lock-Token" ":" Coded-URL
         headers["Lock-Token"] = "<%s>" % locktoken
