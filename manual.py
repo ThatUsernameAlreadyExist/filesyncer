@@ -26,7 +26,7 @@ for line in fsyncer.getLastSyncLogLines():
         decodedLine = line.decode('utf8')
         if decodedLine.startswith("Error: "):
             errorDetected = True
-            
+
         print decodedLine, #print without newline
     except:
         print line,
@@ -35,6 +35,6 @@ if errorDetected:
     print "\n\n!!!-----[ Sync ERROR ]-----!!!"
     print "\a"
     time.sleep(86400)
-else: 
+else:
     print "Waiting 15 seconds..."
     time.sleep(15)

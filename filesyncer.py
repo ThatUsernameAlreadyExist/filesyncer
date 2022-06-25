@@ -7,6 +7,7 @@ import httplib
 import ssl
 import socket
 import hashlib
+import time
 
 
 def _disableCertificateCheck(server):
@@ -36,7 +37,7 @@ def _enableCertificateCheck(server):
 
 
 class SyncElement:
-    def __init__(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256):
+    def __init__(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath):
         self.syncPaths = syncPaths
         self.server = server
         self.port = port
@@ -46,6 +47,7 @@ class SyncElement:
         self.maxFileSizeKb = maxFileSizeKb
         self.isReadOnly = isReadOnly
         self.sha256 = sha256
+        self.syncOnlyExistingPath = syncOnlyExistingPath
 
     def isSet(self):
         return self.syncPaths != None and len(self.syncPaths) > 0
@@ -58,6 +60,7 @@ class SyncElement:
     def isRemote(self):
         return not self.isLocal()
 
+
     def isServerSha256FingerprintSet(self):
         return self.sha256 != None and len(self.sha256) > 0
 
@@ -69,12 +72,12 @@ class SyncElement:
 
 class SyncPair:
     def __init__(self):
-        self.remote = SyncElement("", "", 0, "", "", "", 0, False, "")
-        self.local  = SyncElement("", "", 0, "", "", "", 0, False, "")
+        self.remote = SyncElement("", "", 0, "", "", "", 0, False, "", False)
+        self.local  = SyncElement("", "", 0, "", "", "", 0, False, "", False)
 
 
-    def addSyncElement(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256):
-        syncElement = SyncElement(syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256)
+    def addSyncElement(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath):
+        syncElement = SyncElement(syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath)
         if syncElement.isRemote() and not self.remote.isSet():
             self.remote = syncElement
         elif syncElement.isLocal() and not self.local.isSet():
@@ -102,6 +105,7 @@ class FileSyncer:
     INI_MAX_FILE_SIZE_KB       = "MaxFileSizeKB"
     INI_READ_ONLY_FLAG         = "ReadOnly"
     INI_SERVER_SHA256          = "ServerSha256"
+    INI_ONLY_EXISTING_PATH     = "OnlyIfSyncPathExist"
     NTP_SERVERS                = ['0.ru.pool.ntp.org',
                                   '3.ru.pool.ntp.org',
                                   'europe.pool.ntp.org',
@@ -110,9 +114,14 @@ class FileSyncer:
                                   '3.us.pool.ntp.org']
 
     def sync(self):
+        start = time.time()
+
         self._beginLogSession()
         syncElements = self._getSyncElements()
-        for element in syncElements.itervalues():
+        for key, element in syncElements.iteritems():
+            print "Start sync for task '" + key + "'"
+            taskStart = time.time()
+
             if len(element.remote.syncPaths) == len(element.local.syncPaths):
                 if self._verifySslFingerprint(element.remote):
                     filesyncer = syncer.Syncer(element.remote.getFileSystem(), element.local.getFileSystem(),
@@ -122,9 +131,15 @@ class FileSyncer:
                     for index, remotePath in enumerate(element.remote.syncPaths):
                         filesyncer.addSyncElement(remotePath.decode('utf8'), element.local.syncPaths[index].decode('utf8'))
 
-                    filesyncer.sync()
+                    filesyncer.sync(element.remote.syncOnlyExistingPath, element.local.syncOnlyExistingPath)
             else:
                 print "Error: not equal amount of paths to sync."
+
+            taskEnd = time.time()
+            print "End sync for task '" + key + "'. Sync time: ", round(taskEnd - taskStart, 2), " seconds"
+
+        end = time.time()
+        print "Total sync time: ", round(taskEnd - taskStart, 2), " seconds"
 
 
     def getLastSyncLogLines(self):
@@ -158,7 +173,8 @@ class FileSyncer:
                                     sectionItems.get(FileSyncer.INI_PASSWORD, ""),
                                     int(sectionItems.get(FileSyncer.INI_MAX_FILE_SIZE_KB, "0")),
                                     sectionItems.get(FileSyncer.INI_READ_ONLY_FLAG, "0") == "1",
-                                    sectionItems.get(FileSyncer.INI_SERVER_SHA256, ""))
+                                    sectionItems.get(FileSyncer.INI_SERVER_SHA256, ""),
+                                    sectionItems.get(FileSyncer.INI_ONLY_EXISTING_PATH, "1") == "1")
 
             syncElements[syncElementName] = syncPair
 

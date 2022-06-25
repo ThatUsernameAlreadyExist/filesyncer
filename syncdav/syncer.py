@@ -2,15 +2,21 @@ from __future__ import with_statement
 from filesystems import LocalFileSystem, WebDavFileSystem, StoredFileSystem
 from common import PathOperations
 import datetime, shutil, sys
-from time import sleep
+import time
 
 
 class Syncer:
     STORED_FS_DATA_DIR_NAME = "state"
     BACKUP_DATA_DIR_NAME    = "backup"
-
+    WAIT_ANIMATION_CHARS    = "|/-\\"
 
     def __init__(self, remoteFs, localFs, logFilePath, settingsDirPath, maxFileSizeKb = 0):
+        self.processedDirsCount = 0
+        self.processedFilesCount = 0
+        self.updatedDirsCount = 0
+        self.updatedFilesCount = 0
+        self.lastFileStatPrintTime = time.time()
+        self.fileStatPrintAnimCounter = 0
         self.remoteFs = remoteFs
         self.localFs = localFs
         self.logFilePath = logFilePath
@@ -29,18 +35,20 @@ class Syncer:
         self.syncElements[remotePath] = localPath
 
 
-    def sync(self):
+    def sync(self, onlyIfRemoteExist=False, onlyIfLocalExist=False):
         for remotePath, localPath in self.syncElements.iteritems():
             storedLocalFsState = StoredFileSystem(remotePath, localPath, self.localFs.buildPath(self.settingsDirPath, Syncer.STORED_FS_DATA_DIR_NAME))
             try:
-                self._syncPath(remotePath, localPath, storedLocalFsState)
+                self._syncPath(remotePath, localPath, storedLocalFsState, onlyIfRemoteExist, onlyIfLocalExist)
                 if self.lastSyncPathErrorCount == 0:
                     self._removeNonExistingDataFromStoredFs(storedLocalFsState, self.localFs)
             except Exception, error:
                 self._writeLog("Error: can't sync '" + remotePath.encode('utf8') + "' and '" + localPath.encode('utf8') + "'", error)
 
+        self._printSyncStat(True)
+        print ""
 
-    def _syncPath(self, remotePath, localPath, storedLocalFsState):
+    def _syncPath(self, remotePath, localPath, storedLocalFsState, onlyIfRemoteExist, onlyIfLocalExist):
         isRemoteExist = self.remoteFs.isExist(remotePath)
         isLocalExist  = self.localFs.isExist(localPath)
         self.lastSyncPathErrorCount = 0;
@@ -58,11 +66,15 @@ class Syncer:
             else: #dir
                 self._syncDir(remotePath, localPath, storedLocalFsState)
 
-        else:
+        elif isRemoteExist == onlyIfRemoteExist and isLocalExist == onlyIfLocalExist:
             self._initialSync(remotePath, localPath, isRemoteExist, isLocalExist, storedLocalFsState)
+        else:
+            self._writeLog("Sync ignored: root folder not exist. " + remotePath + " : " + str(isRemoteExist) + ". " + localPath + " : " + str(isLocalExist))
 
 
     def _syncFile(self, remotePath, localPath, remoteFileElement, localFileElement, storedLocalFsState):
+        self.processedFilesCount += 1
+
         try:
             storedFileElement = storedLocalFsState.getFileSystemElement(localPath)
 
@@ -77,6 +89,7 @@ class Syncer:
                     if remoteFileElement.size > self.maxFileSizeBytes:
                         self._writeLog("Sync file(ignored local, big remote size - " + str(remoteFileElement.size / 1024) + " KB): '" + remotePath.encode('utf8') + "' -> '" + localPath.encode('utf8') + "'")
                     elif not self.localFs.isReadOnly():
+                        self.updatedFilesCount += 1
                         content = self.remoteFs.readFile(remotePath)
                         self._writeBackupFile(localPath)
                         self.localFs.writeFile(localPath, content)
@@ -86,6 +99,7 @@ class Syncer:
                     if localFileElement.size > self.maxFileSizeBytes:
                         self._writeLog("Sync file(ignored remote, big local size - " + str(localFileElement.size / 1024) + " KB): '" + localPath.encode('utf8') + "' -> '" + remotePath.encode('utf8') + "'")
                     elif not self.remoteFs.isReadOnly():
+                        self.updatedFilesCount += 1
                         content = self.localFs.readFile(localPath)
                         self.remoteFs.writeFile(remotePath, content)
                         storedLocalFsState.writeFile(localPath, content)
@@ -94,12 +108,14 @@ class Syncer:
             elif remoteFileElement != None: # and no local element
                 if storedFileElement != None:
                     if not self.remoteFs.isReadOnly():
+                        self.updatedFilesCount += 1
                         self.remoteFs.deleteFile(remotePath)
                         self._writeLog("Sync file(delete remote): '" + remotePath.encode('utf8') + "'")
                     storedLocalFsState.deleteFile(localPath)
                 elif remoteFileElement.size > self.maxFileSizeBytes:
                     self._writeLog("Sync file(ignored create local, big remote size - " + str(remoteFileElement.size / 1024) + " KB): '" + remotePath.encode('utf8') + "' -> '" + localPath.encode('utf8') + "'")
                 elif not self.localFs.isReadOnly():
+                    self.updatedFilesCount += 1
                     content = self.remoteFs.readFile(remotePath)
                     self._writeBackupFile(localPath)
                     self.localFs.writeFile(localPath, content)
@@ -109,6 +125,7 @@ class Syncer:
             elif localFileElement != None: # and no remote element
                 if storedFileElement != None:
                     if not self.localFs.isReadOnly():
+                        self.updatedFilesCount += 1
                         self._writeBackupFile(localPath)
                         self.localFs.deleteFile(localPath)
                         self._writeLog("Sync file(delete local): '" + localPath.encode('utf8') + "'")
@@ -116,6 +133,7 @@ class Syncer:
                 elif localFileElement.size > self.maxFileSizeBytes:
                      self._writeLog("Sync file(ignored create remote, big local size - " + str(localFileElement.size / 1024) + " KB): '" + localPath.encode('utf8') + "' -> '" + remotePath.encode('utf8') + "'")
                 elif not self.remoteFs.isReadOnly():
+                    self.updatedFilesCount += 1
                     content = self.localFs.readFile(localPath)
                     self.remoteFs.writeFile(remotePath, content)
                     storedLocalFsState.writeFile(localPath, content)
@@ -123,11 +141,13 @@ class Syncer:
         except Exception, error:
             self.lastSyncPathErrorCount += 1
             self._writeLog("Error: sync file: '" + localPath.encode('utf8') + "' <-> '" + remotePath.encode('utf8') + "'", error)
-            
-        sleep(0.05)
+
+        self._printSyncStat()
 
 
     def _syncDir(self, remotePath, localPath, storedLocalFsState, isRemoteExist = True, isLocalExist = True):
+        self.processedDirsCount += 1
+
         try:
             needSync = True;
             if not isRemoteExist and not isLocalExist:
@@ -136,12 +156,14 @@ class Syncer:
             elif not isRemoteExist:
                 if storedLocalFsState.isExist(localPath) and not storedLocalFsState.isFile(localPath):
                     if not self.localFs.isReadOnly():
+                        self.updatedDirsCount += 1
                         self._writeBackupDir(localPath)
                         self.localFs.deleteDir(localPath)
                         self._writeLog("Sync dir (delete local): '" + localPath.encode('utf8') + "'")
                     storedLocalFsState.deleteDir(localPath)
                     needSync = False
                 elif not self.remoteFs.isReadOnly():
+                    self.updatedDirsCount += 1
                     self.remoteFs.createDir(remotePath)
                     storedLocalFsState.createDir(localPath)
                     self._writeLog("Sync dir (create remote): '" + remotePath.encode('utf8') + "'")
@@ -150,11 +172,13 @@ class Syncer:
             elif not isLocalExist:
                 if storedLocalFsState.isExist(localPath) and not storedLocalFsState.isFile(localPath):
                     if not self.remoteFs.isReadOnly():
+                        self.updatedDirsCount += 1
                         self.remoteFs.deleteDir(remotePath)
                         self._writeLog("Sync dir (delete remote): '" + remotePath.encode('utf8') + "'")
                     storedLocalFsState.deleteDir(localPath)
                     needSync = False
                 elif not self.localFs.isReadOnly():
+                    self.updatedDirsCount += 1
                     self.localFs.createDir(localPath)
                     storedLocalFsState.createDir(localPath)
                     self._writeLog("Sync dir (create local): '" + localPath.encode('utf8') + "'")
@@ -169,8 +193,8 @@ class Syncer:
         except Exception, error:
             self.lastSyncPathErrorCount += 1
             self._writeLog("Error: sync dir: '" + localPath.encode('utf8') + "' <-> '" + remotePath.encode('utf8') + "'", error)
-            
-        sleep(0.05)
+
+        self._printSyncStat()
 
 
     def _syncTwoElementsLists(self, remotePath, localPath, remoteElements, localElements, iterateOnRemoteElements, storedLocalFsState):
@@ -255,12 +279,14 @@ class Syncer:
 
         if firstFs != None and secondFs != None:
             if firstFs.isFile(firstPath):
+                self.updatedFilesCount += 1
                 fileContent = firstFs.readFile(firstPath)
                 secondFs.writeFile(secondPath, fileContent)
                 storedLocalFsState.writeFile(localPath, fileContent)
                 self._writeLog("Sync file(initial sync): '" + localPath.encode('utf8') + "' <-> '" + remotePath.encode('utf8') + "'")
             else:
                 if not secondFs.isExist(secondPath):
+                    self.updatedDirsCount += 1
                     secondFs.createDir(secondPath)
                     storedLocalFsState.createDir(localPath)
                     self._writeLog("Sync dir (initial sync): '" + localPath.encode('utf8') + "' <-> '" + remotePath.encode('utf8') + "'")
@@ -305,3 +331,12 @@ class Syncer:
                     storedLocalFsState.deleteDir(localPath)
 
 
+    def _printSyncStat(self, force=False):
+        ts = time.time()
+        if force or (ts - self.lastFileStatPrintTime > 1):
+            self.lastFileStatPrintTime = ts
+            print Syncer.WAIT_ANIMATION_CHARS[self.fileStatPrintAnimCounter], "    Dirs: ", self.processedDirsCount, " [", self.updatedDirsCount, "] / Files: ", self.processedFilesCount, " [", self.updatedFilesCount, "]                  \r",
+
+            self.fileStatPrintAnimCounter += 1
+            if self.fileStatPrintAnimCounter > len(Syncer.WAIT_ANIMATION_CHARS) - 1:
+                self.fileStatPrintAnimCounter = 0
