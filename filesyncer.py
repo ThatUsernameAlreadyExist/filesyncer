@@ -118,7 +118,7 @@ class FileSyncer:
 
         self._beginLogSession()
         syncElements = self._getSyncElements()
-        for key, element in syncElements.iteritems():
+        for key, element in sorted(syncElements.iteritems()):
             print "Start sync for task '" + key + "'"
             taskStart = time.time()
 
