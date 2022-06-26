@@ -81,8 +81,8 @@ class LocalFileSystem:
 
 
 class WebDavFileSystem:
-    def __init__(self, server, port, proto, login, password):
-        self.dav = davfs.WebDavFS(server, port, proto, login, password)
+    def __init__(self, server, port, proto, login, password, useLocks):
+        self.dav = davfs.WebDavFS(server, port, proto, login, password, useLocks)
 
 
     def isReadOnly(self):

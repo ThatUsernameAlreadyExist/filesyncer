@@ -9,6 +9,14 @@ from httplib import MULTI_STATUS, OK, CONFLICT, NO_CONTENT, UNAUTHORIZED, CREATE
 from common import PathOperations
 
 
+class DummyWebDavLock:
+    def __enter__(self):
+        pass
+
+    def __exit__(self ,type, value, traceback):
+        pass
+
+
 class WebDavElement:
     def __init__(self, rawcontent, response):
         self.isDir = response.get('resourcetype').find('{DAV:}collection') != None
@@ -50,11 +58,11 @@ class WebDavElement:
 
 
 class WebDavFS:
-    def __init__(self, server, port, proto, login, password):
+    def __init__(self, server, port, proto, login, password, useLocks):
         socket.setdefaulttimeout(60)    #Set 60 seconds network timeout, because Python 2.5 doesn't have timeout options for network commands.
         self.davClient = WebDAVClient(server, port, proto)
         self.davClient.setbasicauth(login, password)
-
+        self.useLocks = useLocks
 
     def exists(self, path):
         return len(self._getWebDavElements(path)) > 0
@@ -131,7 +139,7 @@ class WebDavFS:
     def mkdir(self, path):
         parentDir = os.path.dirname(path)
         encodedParentDirPath = self._encodePath(parentDir)
-        lock = self._safeLock(encodedParentDirPath)
+        lock = self._safeLock(encodedParentDirPath, 10)
         if lock != None:
             with lock:
                 try:
@@ -142,6 +150,9 @@ class WebDavFS:
                         raise error
                     else:
                         pass
+                except Exception, error:
+                    self._safeUnlock(encodedParentDirPath)
+                    raise error
 
             self._safeUnlock(encodedParentDirPath)
         else:
@@ -149,21 +160,25 @@ class WebDavFS:
 
 
     # Return WebDavLockResponse object. Can be used with other requests.
-    def _safeLock(self, path):
-        try:
-            lock = self.davClient.lock(path, timeout=3600)
-            if lock == OK or lock == CREATED:
-                return lock
-        except Exception, err:
-            pass
-        return None
+    def _safeLock(self, path, timeoutSec=600):
+        if self.useLocks:
+            try:
+                lock = self.davClient.lock(path, timeout=timeoutSec)
+                if lock == OK or lock == CREATED:
+                    return lock
+            except Exception, err:
+                pass
+            return None
+
+        return DummyWebDavLock()
 
 
     def _safeUnlock(self, path):
-        try:
-            self.davClient.unlock(path)
-        except:
-            pass
+        if self.useLocks:
+            try:
+                self.davClient.unlock(path)
+            except:
+                pass
 
 
     def _getWebDavElements(self, path, depth = 0):

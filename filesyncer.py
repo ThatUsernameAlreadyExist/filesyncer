@@ -37,7 +37,7 @@ def _enableCertificateCheck(server):
 
 
 class SyncElement:
-    def __init__(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath):
+    def __init__(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks):
         self.syncPaths = syncPaths
         self.server = server
         self.port = port
@@ -48,6 +48,7 @@ class SyncElement:
         self.isReadOnly = isReadOnly
         self.sha256 = sha256
         self.syncOnlyExistingPath = syncOnlyExistingPath
+        self.useLocks = useLocks
 
     def isSet(self):
         return self.syncPaths != None and len(self.syncPaths) > 0
@@ -66,18 +67,18 @@ class SyncElement:
 
 
     def getFileSystem(self):
-        filesystem = filesystems.WebDavFileSystem(self.server, self.port, self.proto, self.username, self.password) if self.isRemote() else filesystems.LocalFileSystem()
+        filesystem = filesystems.WebDavFileSystem(self.server, self.port, self.proto, self.username, self.password, self.useLocks) if self.isRemote() else filesystems.LocalFileSystem()
         return filesystems.ReadOnlyFileSystem(filesystem) if self.isReadOnly else filesystem
 
 
 class SyncPair:
     def __init__(self):
-        self.remote = SyncElement("", "", 0, "", "", "", 0, False, "", False)
-        self.local  = SyncElement("", "", 0, "", "", "", 0, False, "", False)
+        self.remote = SyncElement("", "", 0, "", "", "", 0, False, "", True, True)
+        self.local  = SyncElement("", "", 0, "", "", "", 0, False, "", True, True)
 
 
-    def addSyncElement(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath):
-        syncElement = SyncElement(syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath)
+    def addSyncElement(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks):
+        syncElement = SyncElement(syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks)
         if syncElement.isRemote() and not self.remote.isSet():
             self.remote = syncElement
         elif syncElement.isLocal() and not self.local.isSet():
@@ -106,6 +107,7 @@ class FileSyncer:
     INI_READ_ONLY_FLAG         = "ReadOnly"
     INI_SERVER_SHA256          = "ServerSha256"
     INI_ONLY_EXISTING_PATH     = "OnlyIfSyncPathExist"
+    INI_USE_LOCKS              = "UseLocks"
     NTP_SERVERS                = ['0.ru.pool.ntp.org',
                                   '3.ru.pool.ntp.org',
                                   'europe.pool.ntp.org',
@@ -174,7 +176,8 @@ class FileSyncer:
                                     int(sectionItems.get(FileSyncer.INI_MAX_FILE_SIZE_KB, "0")),
                                     sectionItems.get(FileSyncer.INI_READ_ONLY_FLAG, "0") == "1",
                                     sectionItems.get(FileSyncer.INI_SERVER_SHA256, ""),
-                                    sectionItems.get(FileSyncer.INI_ONLY_EXISTING_PATH, "1") == "1")
+                                    sectionItems.get(FileSyncer.INI_ONLY_EXISTING_PATH, "1") == "1",
+                                    sectionItems.get(FileSyncer.INI_USE_LOCKS, "1") == "1")
 
             syncElements[syncElementName] = syncPair
 

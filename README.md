@@ -26,6 +26,7 @@ FileSyncer.ini file structure:
                                                   Files in 'MyWebdavBackupTask1 Remote' paths will not be updated/deleted/created
     SyncPaths=sync/New Folder|sync/New File.txt - list of folder or file paths to sync. Delimiter - |
     OnlyIfSyncPathExist=1                       - enable sync only if root sync path exist (set '0' to automatically create non existing path)
+    UseLocks=0                                  - disable WebDAV locks on files/folders
 
     [MyWebdavBackupTask1 Local]                         - name of sync task with unique id ('Remote')
     SyncPaths=C:\sync\Sync Folder|C:\sync\Sync File.txt - list of folder or file paths to sync. Delimiter - |
