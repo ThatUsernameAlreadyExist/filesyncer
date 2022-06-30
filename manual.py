@@ -21,15 +21,20 @@ time.sleep(1)
 # print last sync log.
 errorDetected = False
 
-for line in fsyncer.getLastSyncLogLines():
-    try:
-        decodedLine = line.decode('utf8')
-        if decodedLine.startswith("Error: "):
-            errorDetected = True
+try:
+    for line in fsyncer.getLastSyncLogLines():
+        try:
+            decodedLine = line.decode('utf8')
+            if decodedLine.startswith("Error: "):
+                errorDetected = True
 
-        print decodedLine, #print without newline
-    except:
-        print line,
+            print decodedLine, #print without newline
+        except:
+            print line,
+except Exception, error:
+    errorDetected = True
+    print error
+    pass
 
 if errorDetected:
     print "\n\n!!!-----[ Sync ERROR ]-----!!!"
