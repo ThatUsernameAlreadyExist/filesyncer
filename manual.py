@@ -3,6 +3,7 @@ import filesyncer
 import time
 import platform
 from os import system
+import sys
 
 #-----------------------------------------------
 system("title FileSyncer (p. " + platform.python_version() + ")")
@@ -10,7 +11,7 @@ print "Start sync"
 
 fsyncer = filesyncer.FileSyncer()
 start = time.time()
-fsyncer.sync()
+fsyncer.sync(sys.argv[1:])
 end = time.time()
 
 print "End sync. Time elapsed: " + str(end - start) + " seconds"

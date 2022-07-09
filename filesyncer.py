@@ -115,33 +115,34 @@ class FileSyncer:
                                   '0.us.pool.ntp.org',
                                   '3.us.pool.ntp.org']
 
-    def sync(self):
+    def sync(self, syncTaskList):
         start = time.time()
 
         self._beginLogSession()
         syncElements = self._getSyncElements()
         for key, element in sorted(syncElements.iteritems()):
-            print "Start sync for task '" + key + "'"
-            taskStart = time.time()
+            if not syncTaskList or key in syncTaskList:
+                print "Start sync for task '" + key + "'"
+                taskStart = time.time()
 
-            if len(element.remote.syncPaths) == len(element.local.syncPaths):
-                if self._verifySslFingerprint(element.remote):
-                    filesyncer = syncer.Syncer(element.remote.getFileSystem(), element.local.getFileSystem(),
-                                               FileSyncer.LOG_FILE_NAME, FileSyncer.SETTINGS_DATA_DIR,
-                                               max(element.remote.maxFileSizeKb, element.local.maxFileSizeKb))
+                if len(element.remote.syncPaths) == len(element.local.syncPaths):
+                    if self._verifySslFingerprint(element.remote):
+                        filesyncer = syncer.Syncer(element.remote.getFileSystem(), element.local.getFileSystem(),
+                                                   FileSyncer.LOG_FILE_NAME, FileSyncer.SETTINGS_DATA_DIR,
+                                                   max(element.remote.maxFileSizeKb, element.local.maxFileSizeKb))
 
-                    for index, remotePath in enumerate(element.remote.syncPaths):
-                        filesyncer.addSyncElement(remotePath.decode('utf8'), element.local.syncPaths[index].decode('utf8'))
+                        for index, remotePath in enumerate(element.remote.syncPaths):
+                            filesyncer.addSyncElement(remotePath.decode('utf8'), element.local.syncPaths[index].decode('utf8'))
 
-                    filesyncer.sync(element.remote.syncOnlyExistingPath, element.local.syncOnlyExistingPath)
-            else:
-                print "Error: not equal amount of paths to sync."
+                        filesyncer.sync(element.remote.syncOnlyExistingPath, element.local.syncOnlyExistingPath)
+                else:
+                    print "Error: not equal amount of paths to sync."
 
-            taskEnd = time.time()
-            print "End sync for task '" + key + "'. Sync time: ", round(taskEnd - taskStart, 2), " seconds"
+                taskEnd = time.time()
+                print "End sync for task '" + key + "'. Sync time: ", round(taskEnd - taskStart, 2), " seconds"
 
         end = time.time()
-        print "Total sync time: ", round(taskEnd - taskStart, 2), " seconds"
+        print "Total sync time: ", round(end - start, 2), " seconds"
 
 
     def getLastSyncLogLines(self):
