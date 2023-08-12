@@ -59,7 +59,7 @@ class WebDavElement:
 
 class WebDavFS:
     def __init__(self, server, port, proto, login, password, useLocks):
-        socket.setdefaulttimeout(60)    #Set 60 seconds network timeout, because Python 2.5 doesn't have timeout options for network commands.
+        socket.setdefaulttimeout(3)    #Set 3 seconds network timeout, because Python 2.5 doesn't have timeout options for network commands.
         self.davClient = WebDAVClient(server, port, proto)
         self.davClient.setbasicauth(login, password)
         self.useLocks = useLocks

@@ -18,6 +18,7 @@
 """The tinydav WebDAV client."""
 from __future__ import with_statement
 import sys
+import time
 
 PYTHON2_6 = (sys.version_info >= (2, 6))
 PYTHON2_7 = (sys.version_info >= (2, 7))
@@ -734,6 +735,32 @@ class HTTPClient(object):
             kwargs["context"] = self.context
         return httplib.HTTPSConnection(*args, **kwargs)
 
+    def retry(tries=3, delay=2):
+        def deco_retry(f):
+            @wraps(f)
+            def f_retry(*args, **kwargs):
+                for _ in range(tries):
+                    try:
+                        return f(*args, **kwargs)
+                    except:
+                        time.sleep(delay)
+                return f(*args, **kwargs)
+            return f_retry
+        return deco_retry
+
+    @retry(4)
+    def _retry_request(self, method, uri, content=None, headers=None):
+        con = self._getconnection()
+        with closing(con):
+            con.request(method, uri, content, headers)  
+            response = self.ResponseType(con.getresponse())
+            if 400 <= response < 500:
+                response = HTTPUserError(response)
+            elif 500 <= response < 600:
+                response = HTTPServerError(response)
+
+        return response
+
     def _request(self, method, uri, content=None, headers=None):
         """Make request and return response.
 
@@ -753,14 +780,7 @@ class HTTPClient(object):
             fake_request = util.FakeHTTPRequest(self, uri, headers)
             self.cookie.add_cookie_header(fake_request)
 
-        con = self._getconnection()
-        with closing(con):
-            con.request(method, uri, content, headers)
-            response = self.ResponseType(con.getresponse())
-            if 400 <= response < 500:
-                response = HTTPUserError(response)
-            elif 500 <= response < 600:
-                response = HTTPServerError(response)
+        response = self._retry_request(method, uri, content, headers)
 
         if self.cookie is not None:
             # Get response object suitable for cookielib
@@ -1057,7 +1077,7 @@ class CoreWebDAVClient(HTTPClient):
 
     ResponseType = WebDAVResponse
 
-    def __init__(self, host, port=80, protocol=None):
+    def __init__(self, host, port=80, protocol=None, timeout=3):
         """Initialize the WebDAV client.
 
         host -- WebDAV server host.
@@ -1072,7 +1092,7 @@ class CoreWebDAVClient(HTTPClient):
                     Default port is 'http'.
 
         """
-        super(CoreWebDAVClient, self).__init__(host, port, protocol)
+        super(CoreWebDAVClient, self).__init__(host, port, protocol, False, timeout)
         self.locks = dict()
 
     def _preparecopymove(self, source, destination, depth, overwrite, headers):
