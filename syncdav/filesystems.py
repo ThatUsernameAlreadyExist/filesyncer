@@ -45,8 +45,21 @@ class LocalFileSystem:
 
     def writeFile(self, filePath, content):
         if content != None:
-            with open(filePath, "wb") as file:
-                file.write(content)
+            try:
+                with open(filePath, "wb") as file:
+                    file.write(content)
+            except IOError, error:
+                strError = str(error)
+
+                # If permission denied on Windows might be trying to update a
+                # hidden file, in which case try opening without CREATE
+                # See: https://stackoverflow.com/questions/13215716/ioerror-errno-13-permission-denied-when-trying-to-open-hidden-file-in-w-mod
+                if "Errno 13" in strError or "Permission" in strError:
+                    with open(filePath, "r+b") as file:
+                        file.truncate(0)
+                        file.write(content)
+                else:
+                    raise error
 
 
     def readFile(self, filePath):
@@ -149,18 +162,18 @@ class StoredFileSystem:
         self.storedPaths = {}
         self._loadFromFile()
 
-        
+
     def getAllElements(self):
         allElements = []
         for key in self.storedPaths:
             allElements.append(key.decode('utf8'))
         return allElements
-    
+
 
     def isReadOnly(self):
         return False
 
-        
+
     def getFileSystemElement(self, path):
         encodedPath = path.encode('utf8')
         if encodedPath in self.storedPaths:
