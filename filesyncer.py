@@ -1,5 +1,6 @@
 from __future__ import with_statement
 from syncdav import davfs, filesystems, syncer, ntplib
+import binascii
 import ConfigParser
 import datetime
 import codecs
@@ -8,6 +9,11 @@ import ssl
 import socket
 import hashlib
 import time
+
+try:
+    import keyring
+except ImportError as e:
+    print "*** For passwords security its recommended to install keyring: 'pip install keyring' ***"
 
 
 def _disableCertificateCheck(server):
@@ -108,6 +114,9 @@ class FileSyncer:
     INI_SERVER_SHA256          = "ServerSha256"
     INI_ONLY_EXISTING_PATH     = "OnlyIfSyncPathExist"
     INI_USE_LOCKS              = "UseLocks"
+    INI_KEYRING_PASS           = "[****]"
+    KEYRING_APP_NAME           = "FyleSyncerAccount:user="
+    KEYRING_KEY                = "&-^7aTHR!.?20g83h34n03vM:d@ATs]s#2nAy?tn\')8!9)BPGrq8479N%I2J9(0"
     NTP_SERVERS                = ['0.ru.pool.ntp.org',
                                   '3.ru.pool.ntp.org',
                                   'europe.pool.ntp.org',
@@ -161,7 +170,12 @@ class FileSyncer:
         config = ConfigParser.ConfigParser()
         config.optionxform = str # Disable lowercase config keys transform.
         config.read(FileSyncer.CONFIG_FILE_NAME)
+
+        self._configCryptPasswords(config)
+
         for section in config.sections():
+            config = self._configDecryptPassword(config, section)
+
             syncElementName = self._getSyncElementName(section)
             syncPair = syncElements.get(syncElementName, SyncPair())
             sectionItems = {}
@@ -260,3 +274,71 @@ class FileSyncer:
             _enableCertificateCheck(syncElement.server)
 
         return response
+
+    def _configCryptPasswords(self, config):
+        hasNewPasswords = False
+
+        for section in config.sections():
+            password = ""
+
+            try:
+                password = config.get(section, FileSyncer.INI_PASSWORD)
+
+                if password != "" and password != FileSyncer.INI_KEYRING_PASS:
+                    server = config.get(section, FileSyncer.INI_SERVER)
+                    login  = config.get(section, FileSyncer.INI_LOGIN)
+
+                    keyRingUser = self._xorCrypt(login + '@' + server, FileSyncer.KEYRING_KEY, True)
+                    serviceName = FileSyncer.KEYRING_APP_NAME + keyRingUser
+                    try:
+                        keyring.delete_password(serviceName, keyRingUser)
+                    except:
+                        pass
+
+                    keyring.set_password(serviceName, keyRingUser, self._xorCrypt(password, FileSyncer.KEYRING_KEY, True))
+                    config.set(section, FileSyncer.INI_PASSWORD, FileSyncer.INI_KEYRING_PASS)
+                    hasNewPasswords = True
+
+            except Exception, error:
+                if password != "":
+                    print "Can't save password in keyring - check settings"
+                    with open(FileSyncer.LOG_FILE_NAME, "a") as logFile:
+                        logFile.write("Warning: can't save password in keyring: " + str(error) + "\n")
+
+        if hasNewPasswords:
+            with open(FileSyncer.CONFIG_FILE_NAME, 'w') as configfile:
+                config.write(configfile)
+                print("Success update config and save new password in keyring")
+
+    def _configDecryptPassword(self, config, section):
+        password = ""
+        try:
+            password = config.get(section, FileSyncer.INI_PASSWORD)
+
+            if password == FileSyncer.INI_KEYRING_PASS:
+                server = config.get(section, FileSyncer.INI_SERVER)
+                login  = config.get(section, FileSyncer.INI_LOGIN)
+
+                keyRingUser = self._xorCrypt(login + '@' + server, FileSyncer.KEYRING_KEY, True)
+                password = self._xorCrypt(keyring.get_password(FileSyncer.KEYRING_APP_NAME + keyRingUser, keyRingUser), FileSyncer.KEYRING_KEY, False)
+                config.set(section, FileSyncer.INI_PASSWORD, password)
+
+        except Exception, error:
+            if password != "":
+                print "Can't load password from keyring - check settings"
+                with open(FileSyncer.LOG_FILE_NAME, "a") as logFile:
+                    logFile.write("Warning: can't load password from keyring: " + str(error) + "\n")
+
+        return config
+
+
+    def _xorCrypt(self, data, key, toHex):
+        res = ""
+
+        if not toHex:
+            data = binascii.unhexlify(data)
+
+        for i in range(len(data)):
+            res += chr(ord(data[i]) ^ ord(key[i % len(key)]))
+
+        return binascii.hexlify(res) if toHex else res
