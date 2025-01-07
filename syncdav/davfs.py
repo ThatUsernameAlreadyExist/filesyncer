@@ -184,7 +184,7 @@ class WebDavFS:
     def _getWebDavElements(self, path, depth = 0):
         elements = []
         try:
-            responses = self.davClient.propfind(self._encodePath(path), depth)
+            responses = self.davClient.propfind(self._encodePath(path), depth, properties = ["resourcetype", "getlastmodified", "getcontentlength"])
             for i in responses:
                 webdavElement = WebDavElement(responses.content, i)
                 if depth == 0 or not PathOperations.comparePath(webdavElement.fullPath, path): #exclude current path if we list entire folder.
