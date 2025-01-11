@@ -195,7 +195,7 @@ class FileSyncer:
                                     sectionItems.get(FileSyncer.INI_READ_ONLY_FLAG, "0") == "1",
                                     sectionItems.get(FileSyncer.INI_SERVER_SHA256, ""),
                                     sectionItems.get(FileSyncer.INI_ONLY_EXISTING_PATH, "1") == "1",
-                                    sectionItems.get(FileSyncer.INI_USE_LOCKS, "1") == "1",
+                                    sectionItems.get(FileSyncer.INI_USE_LOCKS, "0") == "1",
                                     int(sectionItems.get(FileSyncer.INI_MAX_THREADS, "1")))
 
             syncElements[syncElementName] = syncPair
