@@ -2,7 +2,9 @@ from __future__ import with_statement
 import os, sys, shutil, datetime, pickle, hashlib
 from stat import *
 import davfs
-from common import PathOperations
+import threading
+from common import PathOperations, DummyLock
+
 
 class FileSystemElement:
     def __init__(self, parentPath, name, isDir, lastModifiedTimeGMT, size, isLocked = False):
@@ -24,6 +26,10 @@ class FileSystemElement:
 class LocalFileSystem:
     def isReadOnly(self):
         return False
+
+
+    def clone(self):
+        return LocalFileSystem()
 
 
     def list(self, dirPath):
@@ -95,7 +101,17 @@ class LocalFileSystem:
 
 class WebDavFileSystem:
     def __init__(self, server, port, proto, login, password, useLocks):
+        self._server = server
+        self._port = port
+        self._proto = proto
+        self._login = login
+        self._password = password
+        self._useLocks = useLocks
         self.dav = davfs.WebDavFS(server, port, proto, login, password, useLocks)
+
+
+    def clone(self):
+        return WebDavFileSystem(self._server, self._port, self._proto, self._login, self._password, self._useLocks)
 
 
     def isReadOnly(self):
@@ -151,7 +167,7 @@ class WebDavFileSystem:
 
 
 class StoredFileSystem:
-    def __init__(self, remoteSyncPath, localSyncPath, settingsDirPath):
+    def __init__(self, remoteSyncPath, localSyncPath, settingsDirPath, threadSafe = False):
         self.localFilesystem = LocalFileSystem();
         if not self.localFilesystem.isExist(settingsDirPath):
             self.localFilesystem.createDir(settingsDirPath)
@@ -162,11 +178,17 @@ class StoredFileSystem:
         self.storedPaths = {}
         self._loadFromFile()
 
+        if threadSafe:
+            self._lock = threading.Lock()
+        else:
+            self._lock = DummyLock()
+
 
     def getAllElements(self):
         allElements = []
-        for key in self.storedPaths:
-            allElements.append(key.decode('utf8'))
+        with self._lock:
+            for key in self.storedPaths:
+                allElements.append(key.decode('utf8'))
         return allElements
 
 
@@ -176,46 +198,53 @@ class StoredFileSystem:
 
     def getFileSystemElement(self, path):
         encodedPath = path.encode('utf8')
-        if encodedPath in self.storedPaths:
-            return self.storedPaths[encodedPath]
-        else:
-            return None
+        with self._lock:
+            if encodedPath in self.storedPaths:
+                return self.storedPaths[encodedPath]
+            else:
+                return None
 
 
     def writeFile(self, filePath, content):
-        self.storedPaths[filePath.encode('utf8')] =\
-            FileSystemElement(filePath, os.path.dirname(filePath), False, self._getCurrentStoreUTC(), len(content))
-        self._storeInFile()
+        with self._lock:
+            self.storedPaths[filePath.encode('utf8')] =\
+                FileSystemElement(filePath, os.path.dirname(filePath), False, self._getCurrentStoreUTC(), len(content))
+            self._storeInFile()
 
 
     def deleteFile(self, filePath):
         encodedPath = filePath.encode('utf8')
-        if encodedPath in self.storedPaths:
-            del self.storedPaths[encodedPath]
-            self._storeInFile()
+        with self._lock:
+            if encodedPath in self.storedPaths:
+                del self.storedPaths[encodedPath]
+                self._storeInFile()
 
 
     def createDir(self, dirPath):
-        self.storedPaths[dirPath.encode('utf8')] =\
-            FileSystemElement(dirPath, os.path.dirname(dirPath), True, self._getCurrentStoreUTC(), 0)
-        self._storeInFile()
+        with self._lock:
+            self.storedPaths[dirPath.encode('utf8')] =\
+                FileSystemElement(dirPath, os.path.dirname(dirPath), True, self._getCurrentStoreUTC(), 0)
+            self._storeInFile()
 
 
     def deleteDir(self, dirPath):
         encodedPath = dirPath.encode('utf8')
-        for key in self.storedPaths.keys():
-            if key == encodedPath or PathOperations.isSubPath(encodedPath, key):
-                del self.storedPaths[key]
-        self._storeInFile()
+        with self._lock:
+            for key in self.storedPaths.keys():
+                if key == encodedPath or PathOperations.isSubPath(encodedPath, key):
+                    del self.storedPaths[key]
+            self._storeInFile()
 
 
     def isFile(self, path):
         encodedPath = path.encode('utf8')
-        return (encodedPath in self.storedPaths) and not self.storedPaths[encodedPath].isDir
+        with self._lock:
+            return (encodedPath in self.storedPaths) and not self.storedPaths[encodedPath].isDir
 
 
     def isExist(self, path):
-        return path.encode('utf8') in self.storedPaths
+        with self._lock:
+            return path.encode('utf8') in self.storedPaths
 
 
     def _loadFromFile(self):
@@ -237,6 +266,10 @@ class StoredFileSystem:
 class ReadOnlyFileSystem:
     def __init__(self, filesystem):
         self.filesystem = filesystem
+
+
+    def clone(self):
+        return ReadOnlyFileSystem(self.filesystem.clone())
 
 
     def isReadOnly(self):

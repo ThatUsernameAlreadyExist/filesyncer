@@ -6,15 +6,7 @@ from tinydav import *
 from tinydav.exception import *
 from datetime import datetime
 from httplib import MULTI_STATUS, OK, CONFLICT, NO_CONTENT, UNAUTHORIZED, CREATED, NOT_FOUND, METHOD_NOT_ALLOWED
-from common import PathOperations
-
-
-class DummyWebDavLock:
-    def __enter__(self):
-        pass
-
-    def __exit__(self ,type, value, traceback):
-        pass
+from common import PathOperations, DummyLock
 
 
 class WebDavElement:
@@ -170,7 +162,7 @@ class WebDavFS:
                 pass
             return None
 
-        return DummyWebDavLock()
+        return DummyLock()
 
 
     def _safeUnlock(self, path):

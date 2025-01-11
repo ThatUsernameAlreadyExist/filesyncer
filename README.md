@@ -27,8 +27,9 @@ FileSyncer.ini file structure:
     SyncPaths=sync/New Folder|sync/New File.txt - list of folder or file paths to sync. Delimiter - |
     OnlyIfSyncPathExist=1                       - enable sync only if root sync path exist (set '0' to automatically create non existing path)
     UseLocks=0                                  - disable WebDAV locks on files/folders
+    MaxThreads=4                                - maximum number of synchronization threads (allows speeding up the synchronization). By default, only one thread is used.
 
-    [MyWebdavBackupTask1 Local]                         - name of sync task with unique id ('Remote')
+    [MyWebdavBackupTask1 Local]                         - name of sync task with unique id ('Local')
     SyncPaths=C:\sync\Sync Folder|C:\sync\Sync File.txt - list of folder or file paths to sync. Delimiter - |
     OnlyIfSyncPathExist=1
 
@@ -64,7 +65,7 @@ Each task must be with unique name.
 #### Backup
 All backups are stored in 'FileSyncerData\backup' folder.
 Before updating/removing local file(folder) while syncing this original file will be copied to backup folder with full date/time prefix.
-('1.txt' wiil be copied to '[2015-01-01 12-33-27]1.txt')
+('1.txt' wiil be copied to '[2015-01-01 12-33-27 xCvb] 1.txt')
 
 #### Sync state
 Sync states for all tasks stored in 'FileSyncerData\state' folder.
