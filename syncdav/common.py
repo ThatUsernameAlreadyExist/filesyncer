@@ -1,10 +1,18 @@
 import threading
 
 
+class DummyLock:
+    def __enter__(self):
+        pass
+
+    def __exit__(self ,type, value, traceback):
+        pass
+
+
 class AtomicInteger(object):
-    def __init__(self, initial=0):
+    def __init__(self, initial=0, threadSafe = True):
         self.value = initial
-        self._lock = threading.Lock()
+        self._lock = threading.Lock() if threadSafe else DummyLock()
 
     def inc(self, delta=1):
         with self._lock:
@@ -25,13 +33,6 @@ class AtomicInteger(object):
             self.value = newValue
             return self.value
 
-
-class DummyLock:
-    def __enter__(self):
-        pass
-
-    def __exit__(self ,type, value, traceback):
-        pass
 
 
 class PathOperations:

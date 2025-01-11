@@ -15,10 +15,6 @@ class Syncer:
     WAIT_ANIMATION_CHARS    = "|/-\\"
 
     def __init__(self, remoteFs, localFs, logFilePath, settingsDirPath, maxFileSizeKb = 0, maxWorkers=4):
-        self.processedDirsCount = AtomicInteger(0)
-        self.processedFilesCount = AtomicInteger(0)
-        self.updatedDirsCount = AtomicInteger(0)
-        self.updatedFilesCount = AtomicInteger(0)
         self.lastFileStatPrintTime = time.time()
         self.fileStatPrintAnimCounter = 0
         self._remoteFs = remoteFs
@@ -27,7 +23,6 @@ class Syncer:
         self.logFilePath = logFilePath
         self.settingsDirPath = settingsDirPath
         self.backupDirPath = self._internalFs.buildPath(self.settingsDirPath, Syncer.BACKUP_DATA_DIR_NAME)
-        self.lastSyncPathErrorCount = AtomicInteger(0);
         if not self._internalFs.isExist(self.backupDirPath):
             self._internalFs.createDir(self.backupDirPath)
         self.syncElements = {}
@@ -43,8 +38,15 @@ class Syncer:
 
         if self.maxWorkers > 1:
             self._lock = threading.Lock()
+            print "Use " + str(self.maxWorkers) + " threads for sync" 
         else:
             self._lock = DummyLock()
+
+        self.processedDirsCount = AtomicInteger(0, self.maxWorkers > 1)
+        self.processedFilesCount = AtomicInteger(0, self.maxWorkers > 1)
+        self.updatedDirsCount = AtomicInteger(0, self.maxWorkers > 1)
+        self.updatedFilesCount = AtomicInteger(0, self.maxWorkers > 1)
+        self.lastSyncPathErrorCount = AtomicInteger(0, self.maxWorkers > 1)
 
         self.activeWorkers = set()
 
@@ -184,10 +186,25 @@ class Syncer:
             return len(self.activeWorkers)
 
 
+    def _isInWorkerThread(self):
+        currentThread = threading.current_thread()
+        currentThreadIdent = currentThread.ident
+
+        for t in self.executor._threads:
+            if t.ident == currentThreadIdent:
+                return True
+        return False
+
+
     def _syncDir(self, remotePath, localPath, storedLocalFsState, remoteFs, localFs, isRemoteExist = True, isLocalExist = True):
         if self.maxWorkers > 1:
-            while self._getBusyWorkersCount() >= self.maxWorkers:
-                time.sleep(0.3)
+            if self._getBusyWorkersCount() >= self.maxWorkers:
+                if self._isInWorkerThread():
+                    self._syncDirInternal(remotePath, localPath, storedLocalFsState, remoteFs, localFs, isRemoteExist, isLocalExist)
+                    return
+                else:
+                    while self._getBusyWorkersCount() >= self.maxWorkers:
+                        time.sleep(0.3)
 
             future = self.executor.submit(self._syncDirInternal, remotePath, localPath, storedLocalFsState, remoteFs.clone(), localFs.clone(), isRemoteExist, isLocalExist)
             self._addBusyWorker(future)

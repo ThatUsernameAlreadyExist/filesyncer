@@ -43,7 +43,7 @@ def _enableCertificateCheck(server):
 
 
 class SyncElement:
-    def __init__(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks):
+    def __init__(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks, threadsCount):
         self.syncPaths = syncPaths
         self.server = server
         self.port = port
@@ -55,6 +55,7 @@ class SyncElement:
         self.sha256 = sha256
         self.syncOnlyExistingPath = syncOnlyExistingPath
         self.useLocks = useLocks
+        self.threadsCount = threadsCount
 
     def isSet(self):
         return self.syncPaths != None and len(self.syncPaths) > 0
@@ -79,12 +80,12 @@ class SyncElement:
 
 class SyncPair:
     def __init__(self):
-        self.remote = SyncElement("", "", 0, "", "", "", 0, False, "", True, True)
-        self.local  = SyncElement("", "", 0, "", "", "", 0, False, "", True, True)
+        self.remote = SyncElement("", "", 0, "", "", "", 0, False, "", True, True,  1)
+        self.local  = SyncElement("", "", 0, "", "", "", 0, False, "", True, True, 1)
 
 
-    def addSyncElement(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks):
-        syncElement = SyncElement(syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks)
+    def addSyncElement(self, syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks, threadsCount):
+        syncElement = SyncElement(syncPaths, server, port, proto, username, password, maxFileSizeKb, isReadOnly, sha256, syncOnlyExistingPath, useLocks, threadsCount)
         if syncElement.isRemote() and not self.remote.isSet():
             self.remote = syncElement
         elif syncElement.isLocal() and not self.local.isSet():
@@ -114,6 +115,7 @@ class FileSyncer:
     INI_SERVER_SHA256          = "ServerSha256"
     INI_ONLY_EXISTING_PATH     = "OnlyIfSyncPathExist"
     INI_USE_LOCKS              = "UseLocks"
+    INI_MAX_THREADS            = "MaxThreads"
     INI_KEYRING_PASS           = "[****]"
     KEYRING_APP_NAME           = "FyleSyncerAccount:user="
     KEYRING_KEY                = "&-^7aTHR!.?20g83h34n03vM:d@ATs]s#2nAy?tn\')8!9)BPGrq8479N%I2J9(0"
@@ -138,7 +140,8 @@ class FileSyncer:
                     if self._verifySslFingerprint(element.remote):
                         filesyncer = syncer.Syncer(element.remote.getFileSystem(), element.local.getFileSystem(),
                                                    FileSyncer.LOG_FILE_NAME, FileSyncer.SETTINGS_DATA_DIR,
-                                                   max(element.remote.maxFileSizeKb, element.local.maxFileSizeKb))
+                                                   max(element.remote.maxFileSizeKb, element.local.maxFileSizeKb),
+                                                   max(element.remote.threadsCount, element.local.threadsCount))
 
                         for index, remotePath in enumerate(element.remote.syncPaths):
                             filesyncer.addSyncElement(remotePath.decode('utf8'), element.local.syncPaths[index].decode('utf8'))
@@ -192,7 +195,8 @@ class FileSyncer:
                                     sectionItems.get(FileSyncer.INI_READ_ONLY_FLAG, "0") == "1",
                                     sectionItems.get(FileSyncer.INI_SERVER_SHA256, ""),
                                     sectionItems.get(FileSyncer.INI_ONLY_EXISTING_PATH, "1") == "1",
-                                    sectionItems.get(FileSyncer.INI_USE_LOCKS, "1") == "1")
+                                    sectionItems.get(FileSyncer.INI_USE_LOCKS, "1") == "1",
+                                    int(sectionItems.get(FileSyncer.INI_MAX_THREADS, "1")))
 
             syncElements[syncElementName] = syncPair
 
